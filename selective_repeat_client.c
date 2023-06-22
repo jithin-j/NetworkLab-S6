@@ -1,136 +1,75 @@
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
-#include <arpa/inet.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <string.h>
 #include <unistd.h>
-#include <time.h>
+#include <arpa/inet.h>
 
-#define PORT 8080
-#define WINDOW_SIZE 4
-#define TIMEOUT 3
+int isfaulty()
+{ // simulating corruption of message
 
-struct packet {
-    int seq_num;
-    char data;
-};
-
-int main(int argc, char const *argv[]) {
-    int sock = 0, valread;
-    struct sockaddr_in serv_addr;
-    char buffer[1024] = {0};
-
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("\n Socket creation error \n");
-        return -1;
-    }
-
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
-
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-        printf("\nInvalid address/ Address not supported \n");
-        return -1;
-    }
-
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed \n");
-        return -1;
-    }
-
-    char *message = "Hello, Server!";
-    int msglen = strlen(message);
-
-    struct packet send_buffer[WINDOW_SIZE];
-    int send_buffer_size = 0;
-    int next_seq_num = 0;
-    int base_seq_num = 0;
-    int ack_received[WINDOW_SIZE] = {0};
-
-    srand(time(NULL));
-
-    while (base_seq_num < msglen) {
-        while (next_seq_num < base_seq_num + WINDOW_SIZE && next_seq_num < msglen) {
-            struct packet pkt;
-            pkt.seq_num = next_seq_num;
-            pkt.data = message[next_seq_num];
-
-            send_buffer[send_buffer_size++] = pkt;
-            printf("Sent: Seq=%d, Data=%c\n", pkt.seq_num, pkt.data);
-
-            next_seq_num++;
-        }
-
-        for (int i = base_seq_num; i < send_buffer_size; i++) {
-            if (!ack_received[i]) {
-                struct packet pkt = send_buffer[i];
-                char packet[1024];
-                sprintf(packet, "%d|%c", pkt.seq_num, pkt.data);
-
-                if (rand() % 10 < 4) { // Simulate packet loss
-                    printf("Dropped: Seq=%d, Data=%c\n", pkt.seq_num, pkt.data);
-                    continue;
-                }
-
-                send(sock, packet, strlen(packet), 0);
-                printf("Sent: Seq=%d, Data=%c\n", pkt.seq_num, pkt.data);
-            }
-        }
-
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(sock, &readfds);
-
-        struct timeval timeout;
-        timeout.tv_sec = TIMEOUT;
-        timeout.tv_usec = 0;
-
-        int activity = select(sock + 1, &readfds, NULL, NULL, &timeout);
-        if (activity == -1) {
-            perror("select");
-            return -1;
-        } else if (activity == 0) {
-            printf("Timeout occurred, resending unacknowledged packets...\n");
-            for (int i = base_seq_num; i < send_buffer_size; i++) {
-                if (!ack_received[i]) {
-                    struct packet pkt = send_buffer[i];
-                    char packet[1024];
-                    sprintf(packet, "%d|%c", pkt.seq_num, pkt.data);
-
-                    if (rand() % 10 < 4) { //
-                    printf("Dropped: Seq=%d, Data=%c\n", pkt.seq_num, pkt.data);
-                    continue;
-                }
-
-                send(sock, packet, strlen(packet), 0);
-                printf("Resent: Seq=%d, Data=%c\n", pkt.seq_num, pkt.data);
-            }
-        }
-    } else {
-        char ack[1024] = {0};
-        valread = read(sock, ack, 1024);
-
-        int ack_seq_num = atoi(ack);
-        printf("Received: Ack=%d\n", ack_seq_num);
-
-        for (int i = base_seq_num; i < send_buffer_size; i++) {
-            if (!ack_received[i]) {
-                if (send_buffer[i].seq_num == ack_seq_num) {
-                    ack_received[i] = 1;
-
-                    if (i == base_seq_num) {
-                        while (ack_received[base_seq_num] && base_seq_num < send_buffer_size) {
-                            base_seq_num++;
-                        }
-                    }
-
-                    break;
-                }
-            }
-        }
-    }
+    int d = rand() % 4;
+    // printf("%d\n",d);
+    return (d > 2);
 }
+int main()
+{
+    srand(time(0));
+    int c_sock;
+    c_sock = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in client;
+    memset(&client, 0, sizeof(client));
+    client.sin_family = AF_INET;
+    client.sin_port = htons(9009);
+    client.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-return 0;
+    if (connect(c_sock, (struct sockaddr *)&client, sizeof(client)) == -1)
+    {
+        printf("Connection failed");
+        return 0;
+    }
+    printf("\n\tClient -with individual acknowledgement scheme\n\n");
+    char msg1[50] = "akwnowledgementof-";
+    char msg3[50] = "negative akwn-";
+    char msg2[50];
+    char buff[100];
+    int count = -1, flag = 1;
+    while (count < 8)
+    {
+        bzero(buff, sizeof(buff));
+        bzero(msg2, sizeof(msg2));
+        if (count == 7 && flag == 1)
+        {
+            // sleep(3);
+            printf("here\n"); // simulate loss
+            // i--;
+            flag = 0;
+            read(c_sock, buff, sizeof(buff));
+            // printf("aa %s \n",buff);
+            continue;
+        }
+        int n = read(c_sock, buff, sizeof(buff));
+        char i = buff[strlen(buff) - 1];
+        printf("Message received from server : %s \n", buff);
+        int isfault = isfaulty();
+        printf("correption status : %d \n", isfault);
+        printf("Response/akwn sent for message \n");
+        if (isfault)
+            strcpy(msg2, msg3);
+        else
+        {
+            strcpy(msg2, msg1);
+            count++;
+        }
+        msg2[strlen(msg2)] = i;
+        write(c_sock, msg2, sizeof(msg2));
+    }
+
+    close(c_sock);
+    return 0;
 }
-
